@@ -16,8 +16,8 @@ export interface ColumnMapping {
 }
 
 export const fieldLabels: Record<keyof ColumnMapping, string> = {
-  employeeId: 'Employee ID',
-  managerId: 'Manager ID',
+  employeeId: 'Employee ID or Name',
+  managerId: 'Manager ID or Name',
   function: 'Function',
   title: 'Title',
   location: 'Location',

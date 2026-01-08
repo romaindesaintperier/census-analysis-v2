@@ -83,7 +83,7 @@ export function ColumnMappingModal({
           {!currentMapping.managerId && (
             <div className="p-3 rounded-lg bg-secondary/50 border">
               <p className="text-sm text-muted-foreground">
-                <strong>Note:</strong> Manager ID is required to map organizational hierarchy for Spans & Layers analysis.
+                <strong>Note:</strong> Manager ID or Name is required to map organizational hierarchy for Spans & Layers analysis.
               </p>
             </div>
           )}
