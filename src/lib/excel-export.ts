@@ -277,7 +277,7 @@ function addOrgChartSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
 
 function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   const sheet = workbook.addWorksheet('Spans & Layers');
-  const { layerStats, spanStats, functionSpanStats, totals } = data;
+  const { employees, layerStats, spanStats, functionSpanStats, totals } = data;
   const benchmarks = defaultBenchmarks;
 
   // Key Metrics
@@ -364,28 +364,88 @@ function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Single-Report Managers List
+  // Single-Report Managers List with details
   const singleReportManagers = spanStats.filter(s => s.directReports === 1);
-  if (singleReportManagers.length > 0) {
+  const singleReportManagersWithDetails = singleReportManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitle: directReports[0]?.title || 'Unknown',
+    };
+  });
+
+  if (singleReportManagersWithDetails.length > 0) {
     sheet.addRow(['SINGLE-REPORT MANAGERS']);
     sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
     sheet.addRow([]);
 
-    const singleHeaderRow = sheet.addRow(['Manager ID', 'Function', 'Layer', 'Direct Reports']);
+    const singleHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Report Title']);
     styleHeader(singleHeaderRow);
 
-    singleReportManagers.forEach(mgr => {
-      sheet.addRow([mgr.managerId, mgr.function, mgr.layer, mgr.directReports]);
+    singleReportManagersWithDetails.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReportTitle]);
+    });
+  }
+
+  sheet.addRow([]);
+  sheet.addRow([]);
+
+  // Managers Below Minimum Span List with details
+  const belowMinSpanManagers = spanStats.filter(s => s.directReports > 1 && s.directReports < benchmarks.minSpan);
+  const belowMinSpanManagersWithDetails = belowMinSpanManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitles: directReports.map(dr => dr.title).join(', '),
+    };
+  });
+
+  if (belowMinSpanManagersWithDetails.length > 0) {
+    sheet.addRow([`MANAGERS BELOW MINIMUM SPAN (< ${benchmarks.minSpan} reports)`]);
+    sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
+    sheet.addRow([]);
+
+    const belowMinHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Reports', 'Direct Report Titles']);
+    styleHeader(belowMinHeaderRow);
+
+    belowMinSpanManagersWithDetails.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles]);
+    });
+  }
+
+  sheet.addRow([]);
+  sheet.addRow([]);
+
+  // Managers Above Maximum Span List with details
+  const aboveMaxSpanManagers = spanStats.filter(s => s.directReports > benchmarks.maxSpan);
+  const aboveMaxSpanManagersWithDetails = aboveMaxSpanManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitles: directReports.map(dr => dr.title).join(', '),
+    };
+  });
+
+  if (aboveMaxSpanManagersWithDetails.length > 0) {
+    sheet.addRow([`MANAGERS ABOVE MAXIMUM SPAN (> ${benchmarks.maxSpan} reports)`]);
+    sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
+    sheet.addRow([]);
+
+    const aboveMaxHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Reports', 'Direct Report Titles']);
+    styleHeader(aboveMaxHeaderRow);
+
+    aboveMaxSpanManagersWithDetails.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles]);
     });
   }
 
   sheet.columns = [
     { width: 20 },
+    { width: 30 },
+    { width: 20 },
+    { width: 10 },
     { width: 15 },
-    { width: 15 },
-    { width: 15 },
-    { width: 18 },
-    { width: 15 }
+    { width: 50 }
   ];
 }
 
