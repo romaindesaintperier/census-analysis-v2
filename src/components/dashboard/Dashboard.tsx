@@ -11,6 +11,8 @@ import { TenureAnalysis } from './TenureAnalysis';
 import { HeadcountBreakdown } from './HeadcountBreakdown';
 import { OrgChart } from './OrgChart';
 import { AutomationAnalysis } from './AutomationAnalysis';
+import { exportToExcel } from '@/lib/excel-export';
+import { exportToPDF } from '@/lib/pdf-export';
 import { 
   LayoutDashboard, 
   Layers, 
@@ -19,9 +21,11 @@ import {
   Clock, 
   Users,
   Upload,
-  Download,
+  FileSpreadsheet,
+  FileText,
   Network,
-  Bot
+  Bot,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,28 +36,37 @@ interface DashboardProps {
 
 export function Dashboard({ employees, onReset }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('summary');
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   const analysisData: AnalysisData = useMemo(() => {
     return analyzeEmployeeData(employees);
   }, [employees]);
 
-  const handleExport = () => {
-    const exportData = {
-      summary: analysisData.totals,
-      quickWins: analysisData.quickWins,
-      layerStats: analysisData.layerStats,
-      functionStats: analysisData.functionStats,
-      exportDate: new Date().toISOString(),
-    };
+  const handleExportExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      await exportToExcel(analysisData);
+      toast.success('Excel export completed');
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      toast.error('Failed to export Excel file');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `org-analysis-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Data exported successfully');
+  const handleExportPDF = async () => {
+    setIsExportingPDF(true);
+    try {
+      await exportToPDF(analysisData);
+      toast.success('PDF export completed');
+    } catch (error) {
+      console.error('PDF export failed:', error);
+      toast.error('Failed to export PDF file');
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
 
   return (
@@ -71,9 +84,31 @@ export function Dashboard({ employees, onReset }: DashboardProps) {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <Download className="w-4 h-4 mr-2" />
-                Export
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleExportExcel}
+                disabled={isExportingExcel}
+              >
+                {isExportingExcel ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                )}
+                Export Excel
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleExportPDF}
+                disabled={isExportingPDF}
+              >
+                {isExportingPDF ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <FileText className="w-4 h-4 mr-2" />
+                )}
+                Export PDF
               </Button>
               <Button variant="ghost" size="sm" onClick={onReset}>
                 <Upload className="w-4 h-4 mr-2" />
