@@ -31,6 +31,12 @@ export async function exportToExcel(data: AnalysisData): Promise<void> {
   // 8. Compensation Sheet
   addCompensationSheet(workbook, data);
 
+  // 9. Complete Employee Data Sheet (all employees, all fields)
+  addCompleteEmployeeDataSheet(workbook, data);
+
+  // 10. All Managers Sheet (complete span data)
+  addAllManagersSheet(workbook, data);
+
   // Generate and download
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -454,7 +460,7 @@ function addTenureSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Recent Joiners List
+  // Recent Joiners List (ALL recent joiners, not limited)
   if (recentJoiners.length > 0) {
     sheet.addRow(['RECENT JOINERS (<1 YEAR)']);
     sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
@@ -463,8 +469,26 @@ function addTenureSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     const recentHeaderRow = sheet.addRow(['Employee ID', 'Title', 'Function', 'Hire Date', 'FLRR']);
     styleHeader(recentHeaderRow);
 
-    recentJoiners.slice(0, 50).forEach(emp => {
+    // Export ALL recent joiners, no limit
+    recentJoiners.forEach(emp => {
       sheet.addRow([emp.employeeId, emp.title, emp.function, emp.hireDate, formatCurrency(emp.flrr)]);
+    });
+  }
+
+  sheet.addRow([]);
+  sheet.addRow([]);
+
+  // Veterans List (ALL veterans)
+  if (veterans.length > 0) {
+    sheet.addRow(['VETERANS (5+ YEARS)']);
+    sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
+    sheet.addRow([]);
+
+    const veteransHeaderRow = sheet.addRow(['Employee ID', 'Title', 'Function', 'Hire Date', 'Tenure (years)', 'FLRR']);
+    styleHeader(veteransHeaderRow);
+
+    veterans.forEach(emp => {
+      sheet.addRow([emp.employeeId, emp.title, emp.function, emp.hireDate, emp.tenureYears.toFixed(1), formatCurrency(emp.flrr)]);
     });
   }
 
@@ -472,6 +496,7 @@ function addTenureSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     { width: 25 },
     { width: 25 },
     { width: 20 },
+    { width: 15 },
     { width: 15 },
     { width: 15 }
   ];
@@ -619,8 +644,8 @@ function addOffshoringSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Employee Distribution by Country
-  sheet.addRow(['EMPLOYEE DISTRIBUTION']);
+  // Employee Distribution by Country (ALL employees, not limited)
+  sheet.addRow(['EMPLOYEE DISTRIBUTION BY COUNTRY']);
   sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
   sheet.addRow([]);
   sheet.addRow(['Note: Country cost tags (Best-cost vs High-cost) require user input in the dashboard.']);
@@ -629,13 +654,10 @@ function addOffshoringSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   const empHeaderRow = sheet.addRow(['Employee ID', 'Title', 'Function', 'Country', 'Location', 'FLRR']);
   styleHeader(empHeaderRow);
 
-  employees.slice(0, 100).forEach(emp => {
+  // Export ALL employees, no limit
+  employees.forEach(emp => {
     sheet.addRow([emp.employeeId, emp.title, emp.function, emp.country, emp.location, formatCurrency(emp.flrr)]);
   });
-
-  if (employees.length > 100) {
-    sheet.addRow([`... and ${employees.length - 100} more employees`]);
-  }
 
   sheet.columns = [
     { width: 15 },
@@ -757,7 +779,8 @@ function addCompensationSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     const diffHeaderRow = sheet.addRow(['Job Title', 'Function', '# Employees', 'Min Comp', 'Max Comp', 'Avg Comp', 'Variance', 'Variance %']);
     styleHeader(diffHeaderRow);
 
-    differences.sort((a, b) => b.variancePercent - a.variancePercent).slice(0, 15).forEach(diff => {
+    // Export ALL compensation differences, no limit
+    differences.sort((a, b) => b.variancePercent - a.variancePercent).forEach(diff => {
       sheet.addRow([
         diff.title,
         diff.func,
@@ -779,6 +802,121 @@ function addCompensationSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     { width: 15 },
     { width: 12 },
     { width: 12 },
+    { width: 15 }
+  ];
+}
+
+// New sheet: Complete Employee Data (all employees, all fields)
+function addCompleteEmployeeDataSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
+  const sheet = workbook.addWorksheet('All Employee Data');
+  const { employees } = data;
+  const now = new Date();
+
+  sheet.addRow(['COMPLETE EMPLOYEE DATA']);
+  sheet.getRow(1).font = { bold: true, size: 14 };
+  sheet.addRow([`Total: ${employees.length} employees`]);
+  sheet.addRow([]);
+
+  const headerRow = sheet.addRow([
+    'Employee ID',
+    'Manager ID',
+    'Title',
+    'Function',
+    'Business Unit',
+    'Location',
+    'Country',
+    'Hire Date',
+    'Tenure (years)',
+    'Base Salary',
+    'Bonus',
+    'Total Comp',
+    'FLRR',
+    'Variable %'
+  ]);
+  styleHeader(headerRow);
+
+  // Export ALL employees with ALL fields
+  employees.forEach(emp => {
+    const hireDate = new Date(emp.hireDate);
+    const tenureYears = (now.getTime() - hireDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+    const totalComp = emp.baseSalary + emp.bonus;
+    const variablePercent = totalComp > 0 ? (emp.bonus / totalComp) * 100 : 0;
+
+    sheet.addRow([
+      emp.employeeId,
+      emp.managerId || 'None',
+      emp.title,
+      emp.function,
+      emp.businessUnit || 'Unknown',
+      emp.location,
+      emp.country,
+      emp.hireDate,
+      tenureYears.toFixed(1),
+      formatCurrency(emp.baseSalary),
+      formatCurrency(emp.bonus),
+      formatCurrency(totalComp),
+      formatCurrency(emp.flrr),
+      formatPercent(variablePercent)
+    ]);
+  });
+
+  sheet.columns = [
+    { width: 15 },
+    { width: 15 },
+    { width: 25 },
+    { width: 15 },
+    { width: 15 },
+    { width: 20 },
+    { width: 15 },
+    { width: 12 },
+    { width: 12 },
+    { width: 15 },
+    { width: 12 },
+    { width: 15 },
+    { width: 15 },
+    { width: 12 }
+  ];
+}
+
+// New sheet: All Managers with complete span data
+function addAllManagersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
+  const sheet = workbook.addWorksheet('All Managers');
+  const { spanStats, employees } = data;
+
+  sheet.addRow(['ALL MANAGERS - SPAN OF CONTROL']);
+  sheet.getRow(1).font = { bold: true, size: 14 };
+  sheet.addRow([`Total: ${spanStats.length} managers`]);
+  sheet.addRow([]);
+
+  const headerRow = sheet.addRow([
+    'Manager ID',
+    'Manager Title',
+    'Function',
+    'Layer',
+    'Direct Reports',
+    'Manager FLRR'
+  ]);
+  styleHeader(headerRow);
+
+  // Export ALL managers
+  spanStats.forEach(span => {
+    const manager = employees.find(e => e.employeeId === span.managerId);
+    sheet.addRow([
+      span.managerId,
+      span.managerName,
+      span.function,
+      span.layer,
+      span.directReports,
+      manager ? formatCurrency(manager.flrr) : 'N/A'
+    ]);
+  });
+
+  sheet.columns = [
+    { width: 15 },
+    { width: 30 },
+    { width: 15 },
+    { width: 10 },
+    { width: 15 },
     { width: 15 }
   ];
 }
