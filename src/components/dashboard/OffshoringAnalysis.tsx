@@ -186,6 +186,9 @@ export function OffshoringAnalysis({ data }: OffshoringAnalysisProps) {
                 <p className="text-sm text-muted-foreground">Best-Cost Countries</p>
                 <p className="text-2xl font-bold">{totals.bccCount}</p>
                 <p className="text-sm text-muted-foreground">{formatCurrency(totals.bccFLRR)} FLRR</p>
+                <p className="text-sm text-muted-foreground">
+                  Avg FLRR per employee: {totals.bccCount > 0 ? formatCurrency(totals.bccFLRR / totals.bccCount) : 'N/A'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -199,6 +202,9 @@ export function OffshoringAnalysis({ data }: OffshoringAnalysisProps) {
                 <p className="text-sm text-muted-foreground">High-Cost Countries</p>
                 <p className="text-2xl font-bold">{totals.hccCount}</p>
                 <p className="text-sm text-muted-foreground">{formatCurrency(totals.hccFLRR)} FLRR</p>
+                <p className="text-sm text-muted-foreground">
+                  Avg FLRR per employee: {totals.hccCount > 0 ? formatCurrency(totals.hccFLRR / totals.hccCount) : 'N/A'}
+                </p>
               </div>
             </div>
           </CardContent>
