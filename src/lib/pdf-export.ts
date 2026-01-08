@@ -365,17 +365,97 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     }))
   );
 
-  // ALL single-report managers
+  // ALL single-report managers with direct report details
   const singleReportManagers = spanStats.filter(s => s.directReports === 1);
-  if (singleReportManagers.length > 0) {
-    addSectionHeader(`Single-Report Managers (${singleReportManagers.length} total)`);
+  const singleReportManagersWithDetails = singleReportManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitle: directReports[0]?.title || 'Unknown',
+    };
+  });
+
+  if (singleReportManagersWithDetails.length > 0) {
+    addSectionHeader(`Single-Report Managers (${singleReportManagersWithDetails.length} total)`);
     addTable(
       [
-        { header: 'Manager ID', key: 'id', width: 40 },
-        { header: 'Function', key: 'function', width: 40 },
-        { header: 'Layer', key: 'layer', width: 25, align: 'center' },
+        { header: 'Function', key: 'function', width: 25 },
+        { header: 'Manager Title', key: 'managerName', width: 35 },
+        { header: 'Employee ID', key: 'id', width: 25 },
+        { header: 'Layer', key: 'layer', width: 15, align: 'center' },
+        { header: 'Direct Report Title', key: 'directReportTitle', width: 35 },
       ],
-      singleReportManagers.map(m => ({ id: m.managerId, function: m.function, layer: m.layer }))
+      singleReportManagersWithDetails.map(m => ({ 
+        function: m.function, 
+        managerName: m.managerName,
+        id: m.managerId, 
+        layer: m.layer,
+        directReportTitle: m.directReportTitle,
+      }))
+    );
+  }
+
+  // ALL managers below minimum span with direct report details
+  const belowMinSpanManagers = spanStats.filter(s => s.directReports > 1 && s.directReports < benchmarks.minSpan);
+  const belowMinSpanManagersWithDetails = belowMinSpanManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitles: directReports.map(dr => dr.title).join(', '),
+    };
+  });
+
+  if (belowMinSpanManagersWithDetails.length > 0) {
+    addSectionHeader(`Managers Below Minimum Span (${belowMinSpanManagersWithDetails.length} total)`);
+    addTable(
+      [
+        { header: 'Function', key: 'function', width: 22 },
+        { header: 'Manager Title', key: 'managerName', width: 28 },
+        { header: 'Employee ID', key: 'id', width: 22 },
+        { header: 'Layer', key: 'layer', width: 12, align: 'center' },
+        { header: 'Reports', key: 'directReports', width: 14, align: 'center' },
+        { header: 'Direct Report Titles', key: 'directReportTitles', width: 40 },
+      ],
+      belowMinSpanManagersWithDetails.map(m => ({ 
+        function: m.function, 
+        managerName: m.managerName,
+        id: m.managerId, 
+        layer: m.layer,
+        directReports: m.directReports,
+        directReportTitles: m.directReportTitles,
+      }))
+    );
+  }
+
+  // ALL managers above maximum span with direct report details
+  const aboveMaxSpanManagers = spanStats.filter(s => s.directReports > benchmarks.maxSpan);
+  const aboveMaxSpanManagersWithDetails = aboveMaxSpanManagers.map(mgr => {
+    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+    return {
+      ...mgr,
+      directReportTitles: directReports.map(dr => dr.title).join(', '),
+    };
+  });
+
+  if (aboveMaxSpanManagersWithDetails.length > 0) {
+    addSectionHeader(`Managers Above Maximum Span (${aboveMaxSpanManagersWithDetails.length} total)`);
+    addTable(
+      [
+        { header: 'Function', key: 'function', width: 22 },
+        { header: 'Manager Title', key: 'managerName', width: 28 },
+        { header: 'Employee ID', key: 'id', width: 22 },
+        { header: 'Layer', key: 'layer', width: 12, align: 'center' },
+        { header: 'Reports', key: 'directReports', width: 14, align: 'center' },
+        { header: 'Direct Report Titles', key: 'directReportTitles', width: 40 },
+      ],
+      aboveMaxSpanManagersWithDetails.map(m => ({ 
+        function: m.function, 
+        managerName: m.managerName,
+        id: m.managerId, 
+        layer: m.layer,
+        directReports: m.directReports,
+        directReportTitles: m.directReportTitles,
+      }))
     );
   }
 
