@@ -409,7 +409,7 @@ export function OffshoringAnalysis({ data }: OffshoringAnalysisProps) {
                   <TableHead className="text-right">BCC %</TableHead>
                   <TableHead className="text-right">HCC %</TableHead>
                   <TableHead className="text-right">Avg FLRR</TableHead>
-                  <TableHead className="text-center">Offshoring %</TableHead>
+                  <TableHead className="text-center">Incremental Offshoring %</TableHead>
                   <TableHead className="text-center">Benchmark %</TableHead>
                   <TableHead className="text-right">Potential Savings</TableHead>
                 </TableRow>
