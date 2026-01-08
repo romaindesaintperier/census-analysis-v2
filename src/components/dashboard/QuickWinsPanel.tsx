@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, TrendingUp, Users, DollarSign, Layers } from 'lucide-react';
 import { QuickWin } from '@/types/employee';
+import { useMemo } from 'react';
 
 interface QuickWinsPanelProps {
   quickWins: QuickWin[];
@@ -20,7 +21,39 @@ const impactColors = {
   low: 'bg-success/10 text-success border-success/30',
 };
 
+interface DisplayQuickWin extends QuickWin {
+  subItems?: QuickWin[];
+}
+
 export function QuickWinsPanel({ quickWins }: QuickWinsPanelProps) {
+  // Group compensation-related quick wins into a single consolidated entry
+  const displayQuickWins = useMemo((): DisplayQuickWin[] => {
+    const compensationWins = quickWins.filter(w => w.category === 'compensation');
+    const otherWins = quickWins.filter(w => w.category !== 'compensation');
+
+    const result: DisplayQuickWin[] = [...otherWins];
+
+    if (compensationWins.length > 0) {
+      // Determine highest impact among compensation wins
+      const hasHighImpact = compensationWins.some(w => w.impact === 'high');
+      const hasMediumImpact = compensationWins.some(w => w.impact === 'medium');
+      const groupImpact: 'high' | 'medium' | 'low' = hasHighImpact ? 'high' : hasMediumImpact ? 'medium' : 'low';
+
+      result.push({
+        id: 'comp-grouped',
+        title: 'Variable Compensation Optimization (multiple initiatives)',
+        description: `${compensationWins.length} function${compensationWins.length > 1 ? 's' : ''} with variable compensation below target.`,
+        impact: groupImpact,
+        category: 'compensation',
+        subItems: compensationWins,
+      });
+    }
+
+    // Sort by impact
+    const impactOrder = { high: 0, medium: 1, low: 2 };
+    return result.sort((a, b) => impactOrder[a.impact] - impactOrder[b.impact]);
+  }, [quickWins]);
+
   if (quickWins.length === 0) {
     return (
       <Card>
@@ -51,7 +84,7 @@ export function QuickWinsPanel({ quickWins }: QuickWinsPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {quickWins.map((win) => {
+        {displayQuickWins.map((win) => {
           const Icon = categoryIcons[win.category];
           return (
             <div 
@@ -72,6 +105,17 @@ export function QuickWinsPanel({ quickWins }: QuickWinsPanelProps) {
                   <p className="text-sm text-muted-foreground">{win.description}</p>
                   {win.metric && (
                     <p className="text-sm font-medium text-primary">{win.metric}</p>
+                  )}
+                  {/* Show sub-items for grouped compensation wins */}
+                  {win.subItems && win.subItems.length > 0 && (
+                    <ul className="mt-2 space-y-1 pl-2 border-l-2 border-primary/20">
+                      {win.subItems.map((subItem) => (
+                        <li key={subItem.id} className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{subItem.title.replace('Low Variable Comp: ', '')}</span>
+                          {subItem.metric && <span className="text-primary ml-1">({subItem.metric})</span>}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </div>
