@@ -1,6 +1,16 @@
 import { useState, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Employee, AnalysisData } from '@/types/employee';
 import { analyzeEmployeeData } from '@/lib/analysis';
 import { ExecutiveSummary } from './ExecutiveSummary';
@@ -38,6 +48,7 @@ export function Dashboard({ employees, onReset }: DashboardProps) {
   const [activeTab, setActiveTab] = useState('summary');
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [showLeaveConfirmation, setShowLeaveConfirmation] = useState(false);
 
   const analysisData: AnalysisData = useMemo(() => {
     return analyzeEmployeeData(employees);
@@ -110,7 +121,7 @@ export function Dashboard({ employees, onReset }: DashboardProps) {
                 )}
                 Export PDF
               </Button>
-              <Button variant="ghost" size="sm" onClick={onReset}>
+              <Button variant="ghost" size="sm" onClick={() => setShowLeaveConfirmation(true)}>
                 <Upload className="w-4 h-4 mr-2" />
                 New Analysis
               </Button>
@@ -190,6 +201,27 @@ export function Dashboard({ employees, onReset }: DashboardProps) {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Leave Page Confirmation Dialog */}
+      <AlertDialog open={showLeaveConfirmation} onOpenChange={setShowLeaveConfirmation}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you'd like to leave this page?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will lose the current version of the dashboards, but you can export them to PDF or Excel.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onReset}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Leave page
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
