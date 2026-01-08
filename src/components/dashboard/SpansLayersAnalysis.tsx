@@ -42,13 +42,36 @@ export function SpansLayersAnalysis({ data, benchmarks = defaultBenchmarks }: Sp
   const singleReportManagersWithDetails = useMemo(() => {
     return outliers.singleReport.map(mgr => {
       // Find the direct report (employee whose managerId matches this manager)
-      const directReport = employees.find(emp => emp.managerId === mgr.managerId);
+      const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
       return {
         ...mgr,
-        directReportTitle: directReport?.title || 'Unknown',
+        directReportTitles: directReports.map(dr => dr.title),
+        directReportTitle: directReports[0]?.title || 'Unknown',
       };
     });
   }, [outliers.singleReport, employees]);
+
+  // Get direct report info for managers below min span
+  const belowMinSpanManagersWithDetails = useMemo(() => {
+    return outliers.narrow.map(mgr => {
+      const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+      return {
+        ...mgr,
+        directReportTitles: directReports.map(dr => dr.title),
+      };
+    });
+  }, [outliers.narrow, employees]);
+
+  // Get direct report info for managers above max span
+  const aboveMaxSpanManagersWithDetails = useMemo(() => {
+    return outliers.wide.map(mgr => {
+      const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
+      return {
+        ...mgr,
+        directReportTitles: directReports.map(dr => dr.title),
+      };
+    });
+  }, [outliers.wide, employees]);
 
   // Org-wide average span
   const orgAvgSpan = totals.avgSpan;
@@ -437,6 +460,109 @@ export function SpansLayersAnalysis({ data, benchmarks = defaultBenchmarks }: Sp
                       <TableCell className="text-muted-foreground">{mgr.managerId}</TableCell>
                       <TableCell className="text-center">{mgr.layer}</TableCell>
                       <TableCell>{mgr.directReportTitle}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Managers Below Minimum Span Table */}
+      {belowMinSpanManagersWithDetails.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-warning" />
+              Managers Below Minimum Span ({belowMinSpanManagersWithDetails.length})
+              <Badge variant="outline" className="ml-2 text-warning border-warning">
+                &lt; {benchmarks.minSpan} reports
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Function</TableHead>
+                    <TableHead>Manager Title</TableHead>
+                    <TableHead>Employee ID</TableHead>
+                    <TableHead className="text-center">Layer</TableHead>
+                    <TableHead className="text-center">Direct Reports</TableHead>
+                    <TableHead>Direct Report Titles</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {belowMinSpanManagersWithDetails.map((mgr) => (
+                    <TableRow key={mgr.managerId}>
+                      <TableCell className="font-medium">{mgr.function}</TableCell>
+                      <TableCell>{mgr.managerName}</TableCell>
+                      <TableCell className="text-muted-foreground">{mgr.managerId}</TableCell>
+                      <TableCell className="text-center">{mgr.layer}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="text-warning border-warning">
+                          {mgr.directReports}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[300px]">
+                        <div className="text-sm">
+                          {mgr.directReportTitles.join(', ')}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Managers Above Maximum Span Table */}
+      {aboveMaxSpanManagersWithDetails.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-chart-3" />
+              Managers Above Maximum Span ({aboveMaxSpanManagersWithDetails.length})
+              <Badge variant="outline" className="ml-2">
+                &gt; {benchmarks.maxSpan} reports
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Function</TableHead>
+                    <TableHead>Manager Title</TableHead>
+                    <TableHead>Employee ID</TableHead>
+                    <TableHead className="text-center">Layer</TableHead>
+                    <TableHead className="text-center">Direct Reports</TableHead>
+                    <TableHead>Direct Report Titles</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {aboveMaxSpanManagersWithDetails.map((mgr) => (
+                    <TableRow key={mgr.managerId}>
+                      <TableCell className="font-medium">{mgr.function}</TableCell>
+                      <TableCell>{mgr.managerName}</TableCell>
+                      <TableCell className="text-muted-foreground">{mgr.managerId}</TableCell>
+                      <TableCell className="text-center">{mgr.layer}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">
+                          {mgr.directReports}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[300px]">
+                        <div className="text-sm truncate" title={mgr.directReportTitles.join(', ')}>
+                          {mgr.directReportTitles.slice(0, 5).join(', ')}
+                          {mgr.directReportTitles.length > 5 && ` +${mgr.directReportTitles.length - 5} more`}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
