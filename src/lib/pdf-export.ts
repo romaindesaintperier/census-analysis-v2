@@ -88,7 +88,8 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     yPos += 6;
   }
 
-  function addTable(columns: TableColumn[], rows: Record<string, string | number>[], maxRows: number = 50): void {
+  // Updated addTable - NO row limits, exports ALL data with proper pagination
+  function addTable(columns: TableColumn[], rows: Record<string, string | number>[]): void {
     const rowHeight = 7;
     const headerHeight = 8;
     
@@ -113,13 +114,37 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     });
     yPos += headerHeight;
 
-    // Rows
+    // Rows - ALL rows, with proper pagination
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(...colors.text);
     
-    const displayRows = rows.slice(0, maxRows);
-    displayRows.forEach((row, index) => {
-      checkPageBreak(rowHeight);
+    rows.forEach((row, index) => {
+      // Check if we need a new page before each row
+      if (yPos + rowHeight > pageHeight - margin) {
+        pdf.addPage();
+        yPos = margin;
+        
+        // Re-add header on new page for continuity
+        pdf.setFillColor(...colors.header);
+        pdf.rect(margin, yPos - 5, contentWidth, headerHeight, 'F');
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(255, 255, 255);
+        
+        xPos = margin + 2;
+        columns.forEach(col => {
+          const align = col.align || 'left';
+          let textX = xPos;
+          if (align === 'center') textX = xPos + col.width / 2;
+          if (align === 'right') textX = xPos + col.width - 2;
+          pdf.text(col.header, textX, yPos, { align });
+          xPos += col.width;
+        });
+        yPos += headerHeight;
+        
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(...colors.text);
+      }
       
       // Alternate row background
       if (index % 2 === 0) {
@@ -144,13 +169,6 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
       });
       yPos += rowHeight;
     });
-
-    if (rows.length > maxRows) {
-      pdf.setFontSize(8);
-      pdf.setTextColor(...colors.muted);
-      pdf.text(`... and ${rows.length - maxRows} more rows`, margin, yPos);
-      yPos += 6;
-    }
 
     yPos += 5;
   }
@@ -191,8 +209,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
         { header: 'Impact', key: 'impact', width: 20, align: 'center' },
         { header: 'Metric', key: 'metric', width: 35, align: 'right' },
       ],
-      quickWins.map(qw => ({ title: qw.title, category: qw.category, impact: qw.impact, metric: qw.metric || '' })),
-      10
+      quickWins.map(qw => ({ title: qw.title, category: qw.category, impact: qw.impact, metric: qw.metric || '' }))
     );
   }
 
@@ -215,7 +232,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
   // ============ 2. HEADCOUNT TAB ============
   addNewPage('Headcount Breakdown');
 
-  // Location stats
+  // Location stats - ALL locations
   const locationStats = Array.from(
     employees.reduce((map, emp) => {
       const loc = emp.location;
@@ -227,6 +244,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     }, new Map<string, { location: string; headcount: number; flrr: number }>())
   ).map(([, v]) => v).sort((a, b) => b.headcount - a.headcount);
 
+  // Business Unit stats - ALL business units
   const businessUnitStats = Array.from(
     employees.reduce((map, emp) => {
       const bu = emp.businessUnit || 'Unknown';
@@ -255,8 +273,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
       { header: 'Headcount', key: 'headcount', width: 30, align: 'right' },
       { header: 'Total FLRR', key: 'flrr', width: 40, align: 'right' },
     ],
-    locationStats.map(l => ({ location: l.location, headcount: l.headcount, flrr: formatCurrency(l.flrr) })),
-    15
+    locationStats.map(l => ({ location: l.location, headcount: l.headcount, flrr: formatCurrency(l.flrr) }))
   );
 
   addSectionHeader('Business Unit Breakdown');
@@ -266,8 +283,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
       { header: 'Headcount', key: 'headcount', width: 30, align: 'right' },
       { header: 'Total FLRR', key: 'flrr', width: 40, align: 'right' },
     ],
-    businessUnitStats.map(b => ({ bu: b.businessUnit, headcount: b.headcount, flrr: formatCurrency(b.flrr) })),
-    15
+    businessUnitStats.map(b => ({ bu: b.businessUnit, headcount: b.headcount, flrr: formatCurrency(b.flrr) }))
   );
 
   // ============ 3. ORG CHART TAB ============
@@ -349,19 +365,31 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     }))
   );
 
+  // ALL single-report managers
   const singleReportManagers = spanStats.filter(s => s.directReports === 1);
   if (singleReportManagers.length > 0) {
-    addSectionHeader('Single-Report Managers');
+    addSectionHeader(`Single-Report Managers (${singleReportManagers.length} total)`);
     addTable(
       [
         { header: 'Manager ID', key: 'id', width: 40 },
         { header: 'Function', key: 'function', width: 40 },
         { header: 'Layer', key: 'layer', width: 25, align: 'center' },
       ],
-      singleReportManagers.map(m => ({ id: m.managerId, function: m.function, layer: m.layer })),
-      20
+      singleReportManagers.map(m => ({ id: m.managerId, function: m.function, layer: m.layer }))
     );
   }
+
+  // ALL managers list
+  addSectionHeader(`All Managers (${spanStats.length} total)`);
+  addTable(
+    [
+      { header: 'Manager ID', key: 'id', width: 35 },
+      { header: 'Function', key: 'function', width: 35 },
+      { header: 'Layer', key: 'layer', width: 20, align: 'center' },
+      { header: 'Direct Reports', key: 'reports', width: 30, align: 'right' },
+    ],
+    spanStats.map(m => ({ id: m.managerId, function: m.function, layer: m.layer, reports: m.directReports }))
+  );
 
   // ============ 5. TENURE TAB ============
   addNewPage('Tenure Analysis');
@@ -407,6 +435,34 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     ],
     tenureByFunction
   );
+
+  // ALL recent joiners
+  if (recentJoiners.length > 0) {
+    addSectionHeader(`Recent Joiners - Under 1 Year (${recentJoiners.length} total)`);
+    addTable(
+      [
+        { header: 'Employee ID', key: 'id', width: 30 },
+        { header: 'Title', key: 'title', width: 45 },
+        { header: 'Function', key: 'function', width: 30 },
+        { header: 'Hire Date', key: 'hireDate', width: 25, align: 'center' },
+      ],
+      recentJoiners.map(e => ({ id: e.employeeId, title: e.title, function: e.function, hireDate: e.hireDate }))
+    );
+  }
+
+  // ALL veterans
+  if (veterans.length > 0) {
+    addSectionHeader(`Veterans - 5+ Years (${veterans.length} total)`);
+    addTable(
+      [
+        { header: 'Employee ID', key: 'id', width: 30 },
+        { header: 'Title', key: 'title', width: 45 },
+        { header: 'Function', key: 'function', width: 30 },
+        { header: 'Tenure', key: 'tenure', width: 25, align: 'right' },
+      ],
+      veterans.map(e => ({ id: e.employeeId, title: e.title, function: e.function, tenure: e.tenureYears.toFixed(1) + ' yrs' }))
+    );
+  }
 
   // ============ 6. AUTOMATION TAB ============
   addNewPage('Automation Analysis');
@@ -458,17 +514,47 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
   addKeyValue('Low Opportunity', `${low.reduce((s, o) => s + o.headcount, 0)} employees (${formatCurrency(low.reduce((s, o) => s + o.totalFLRR, 0))} FLRR)`);
   yPos += 5;
 
-  addSectionHeader('High Automation Opportunity Roles');
-  addTable(
-    [
-      { header: 'Job Title', key: 'title', width: 50 },
-      { header: 'Score', key: 'score', width: 20, align: 'center' },
-      { header: 'Headcount', key: 'headcount', width: 25, align: 'right' },
-      { header: 'FLRR', key: 'flrr', width: 35, align: 'right' },
-    ],
-    high.map(o => ({ title: o.title, score: `${o.score}%`, headcount: o.headcount, flrr: formatCurrency(o.totalFLRR) })),
-    15
-  );
+  // ALL high opportunity roles
+  if (high.length > 0) {
+    addSectionHeader(`High Automation Opportunity Roles (${high.length} titles)`);
+    addTable(
+      [
+        { header: 'Job Title', key: 'title', width: 50 },
+        { header: 'Score', key: 'score', width: 20, align: 'center' },
+        { header: 'Headcount', key: 'headcount', width: 25, align: 'right' },
+        { header: 'FLRR', key: 'flrr', width: 35, align: 'right' },
+      ],
+      high.map(o => ({ title: o.title, score: `${o.score}%`, headcount: o.headcount, flrr: formatCurrency(o.totalFLRR) }))
+    );
+  }
+
+  // ALL medium opportunity roles
+  if (medium.length > 0) {
+    addSectionHeader(`Medium Automation Opportunity Roles (${medium.length} titles)`);
+    addTable(
+      [
+        { header: 'Job Title', key: 'title', width: 50 },
+        { header: 'Score', key: 'score', width: 20, align: 'center' },
+        { header: 'Headcount', key: 'headcount', width: 25, align: 'right' },
+        { header: 'FLRR', key: 'flrr', width: 35, align: 'right' },
+      ],
+      medium.map(o => ({ title: o.title, score: `${o.score}%`, headcount: o.headcount, flrr: formatCurrency(o.totalFLRR) }))
+    );
+  }
+
+  // ALL low opportunity roles
+  if (low.length > 0) {
+    addSectionHeader(`Low Automation Opportunity Roles (${low.length} titles)`);
+    addTable(
+      [
+        { header: 'Job Title', key: 'title', width: 50 },
+        { header: 'Score', key: 'score', width: 20, align: 'center' },
+        { header: 'Headcount', key: 'headcount', width: 25, align: 'right' },
+        { header: 'FLRR', key: 'flrr', width: 35, align: 'right' },
+      ],
+      low.map(o => ({ title: o.title, score: `${o.score}%`, headcount: o.headcount, flrr: formatCurrency(o.totalFLRR) }))
+    );
+  }
 
   // ============ 7. OFFSHORING TAB ============
   addNewPage('Offshoring Analysis');
@@ -479,6 +565,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
   addText('Note: Country cost tags (Best-cost vs High-cost) require user input in the dashboard.', 9);
   yPos += 3;
 
+  // ALL countries
   addTable(
     [
       { header: 'Country', key: 'country', width: 40 },
@@ -491,8 +578,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
       headcount: c.headcount,
       totalFLRR: formatCurrency(c.totalFLRR),
       avgFLRR: formatCurrency(c.avgFLRR),
-    })),
-    20
+    }))
   );
 
   addSectionHeader('Function Distribution');
@@ -559,10 +645,81 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     benchmarkRows
   );
 
+  // Compensation Differences - ALL significant differences
+  const titleMap = new Map<string, typeof employees>();
+  employees.forEach(emp => {
+    const key = emp.title;
+    const existing = titleMap.get(key) || [];
+    existing.push(emp);
+    titleMap.set(key, existing);
+  });
+
+  const differences: { title: string; func: string; count: number; min: string; max: string; avg: string; variance: string; variancePercent: string }[] = [];
+
+  titleMap.forEach((emps, title) => {
+    if (emps.length < 2) return;
+    const comps = emps.map(e => e.baseSalary + e.bonus);
+    const minComp = Math.min(...comps);
+    const maxComp = Math.max(...comps);
+    const avgComp = comps.reduce((a, b) => a + b, 0) / comps.length;
+    const variance = maxComp - minComp;
+    const variancePercent = avgComp > 0 ? (variance / avgComp) * 100 : 0;
+
+    if (variancePercent > 30 && variance > 10000) {
+      differences.push({
+        title,
+        func: emps[0].function,
+        count: emps.length,
+        min: formatCurrency(minComp),
+        max: formatCurrency(maxComp),
+        avg: formatCurrency(avgComp),
+        variance: formatCurrency(variance),
+        variancePercent: formatPercent(variancePercent),
+      });
+    }
+  });
+
+  if (differences.length > 0) {
+    differences.sort((a, b) => parseFloat(b.variancePercent) - parseFloat(a.variancePercent));
+    addSectionHeader(`Significant Compensation Differences (${differences.length} titles with >30% variance)`);
+    addTable(
+      [
+        { header: 'Job Title', key: 'title', width: 35 },
+        { header: 'Function', key: 'func', width: 25 },
+        { header: '#', key: 'count', width: 10, align: 'right' },
+        { header: 'Min', key: 'min', width: 22, align: 'right' },
+        { header: 'Max', key: 'max', width: 22, align: 'right' },
+        { header: 'Var %', key: 'variancePercent', width: 18, align: 'right' },
+      ],
+      differences
+    );
+  }
+
+  // ============ 9. COMPLETE EMPLOYEE LIST ============
+  addNewPage('Complete Employee Data');
+  
+  addSectionHeader(`All Employees (${employees.length} total)`);
+  addTable(
+    [
+      { header: 'ID', key: 'id', width: 20 },
+      { header: 'Title', key: 'title', width: 40 },
+      { header: 'Function', key: 'function', width: 25 },
+      { header: 'Country', key: 'country', width: 25 },
+      { header: 'FLRR', key: 'flrr', width: 22, align: 'right' },
+    ],
+    employees.map(e => ({
+      id: e.employeeId,
+      title: e.title,
+      function: e.function,
+      country: e.country,
+      flrr: formatCurrency(e.flrr),
+    }))
+  );
+
   // Footer on last page
   pdf.setFontSize(8);
   pdf.setTextColor(...colors.muted);
-  pdf.text(`Generated on ${new Date().toLocaleDateString()}`, margin, pageHeight - 10);
+  pdf.text(`Generated on ${new Date().toLocaleDateString()} | Total Pages: ${pdf.getNumberOfPages()}`, margin, pageHeight - 10);
 
   // Save
   pdf.save(`org-analysis-${new Date().toISOString().split('T')[0]}.pdf`);
