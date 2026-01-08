@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Treemap } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Treemap, Cell, LabelList } from 'recharts';
 import { AnalysisData } from '@/types/employee';
 import { formatCurrency, formatNumber } from '@/lib/analysis';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -11,12 +11,58 @@ interface HeadcountBreakdownProps {
   data: AnalysisData;
 }
 
+// Custom label renderer that positions labels inside or outside bars based on space
+const createCustomLabel = (metric: 'headcount' | 'flrr', maxValue: number) => {
+  return (props: any) => {
+    const { x, y, width, height, value } = props;
+    if (value === undefined || value === null) return null;
+
+    const displayValue = metric === 'headcount' ? formatNumber(value) : formatCurrency(value);
+    const labelWidth = displayValue.length * 7; // Approximate width per character
+    const barWidth = width || 0;
+    const threshold = maxValue * 0.15; // 15% of max value as threshold for inside/outside
+
+    // Determine if label should be inside or outside the bar
+    const isInsideBar = value > threshold && barWidth > labelWidth + 10;
+    
+    if (isInsideBar) {
+      return (
+        <text
+          x={x + barWidth - 8}
+          y={y + height / 2}
+          textAnchor="end"
+          dominantBaseline="middle"
+          fill="hsl(var(--primary-foreground))"
+          fontSize={11}
+          fontWeight={500}
+        >
+          {displayValue}
+        </text>
+      );
+    } else {
+      return (
+        <text
+          x={x + barWidth + 6}
+          y={y + height / 2}
+          textAnchor="start"
+          dominantBaseline="middle"
+          fill="hsl(var(--foreground))"
+          fontSize={11}
+          fontWeight={500}
+        >
+          {displayValue}
+        </text>
+      );
+    }
+  };
+};
+
 export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
   const [metric, setMetric] = useState<'headcount' | 'flrr'>('headcount');
   const { employees, functionStats } = data;
 
   // Location data
-  const locationStats = Array.from(
+  const locationStats = useMemo(() => Array.from(
     employees.reduce((map, emp) => {
       const loc = emp.location;
       const existing = map.get(loc) || { location: loc, headcount: 0, flrr: 0 };
@@ -25,10 +71,10 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
       map.set(loc, existing);
       return map;
     }, new Map<string, { location: string; headcount: number; flrr: number }>())
-  ).map(([, v]) => v).sort((a, b) => b.headcount - a.headcount);
+  ).map(([, v]) => v).sort((a, b) => b.headcount - a.headcount), [employees]);
 
   // Business unit data
-  const businessUnitStats = Array.from(
+  const businessUnitStats = useMemo(() => Array.from(
     employees.reduce((map, emp) => {
       const bu = emp.businessUnit || 'Unknown';
       const existing = map.get(bu) || { businessUnit: bu, headcount: 0, flrr: 0 };
@@ -37,7 +83,23 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
       map.set(bu, existing);
       return map;
     }, new Map<string, { businessUnit: string; headcount: number; flrr: number }>())
-  ).map(([, v]) => v).sort((a, b) => b.headcount - a.headcount);
+  ).map(([, v]) => v).sort((a, b) => b.headcount - a.headcount), [employees]);
+
+  // Calculate max values for each dataset for label positioning
+  const maxFunctionValue = useMemo(() => {
+    return Math.max(...functionStats.map(d => metric === 'headcount' ? d.headcount : d.totalFLRR));
+  }, [functionStats, metric]);
+
+  const maxLocationValue = useMemo(() => {
+    return Math.max(...locationStats.map(d => metric === 'headcount' ? d.headcount : d.flrr));
+  }, [locationStats, metric]);
+
+  const maxBusinessUnitValue = useMemo(() => {
+    return Math.max(...businessUnitStats.map(d => metric === 'headcount' ? d.headcount : d.flrr));
+  }, [businessUnitStats, metric]);
+
+  // Calculate dynamic chart height based on number of items
+  const getChartHeight = (itemCount: number) => Math.max(400, itemCount * 35);
 
   // Treemap data for function breakdown
   const treemapData = functionStats.map(d => ({
@@ -133,13 +195,18 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
         <TabsContent value="function" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="h-[400px]">
+              <div style={{ height: getChartHeight(functionStats.length) }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={functionStats} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <BarChart 
+                    data={functionStats} 
+                    layout="vertical"
+                    margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                     <XAxis 
                       type="number" 
-                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)} 
+                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)}
+                      domain={[0, 'dataMax']}
                     />
                     <YAxis type="category" dataKey="function" width={120} tick={{ fontSize: 12 }} />
                     <Tooltip 
@@ -153,7 +220,8 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
                     <Bar 
                       dataKey={metric === 'headcount' ? 'headcount' : 'totalFLRR'} 
                       fill="hsl(var(--primary))" 
-                      radius={[0, 4, 4, 0]} 
+                      radius={[0, 4, 4, 0]}
+                      label={createCustomLabel(metric, maxFunctionValue)}
                     />
                   </BarChart>
                 </ResponsiveContainer>
@@ -165,13 +233,18 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
         <TabsContent value="location" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="h-[400px]">
+              <div style={{ height: getChartHeight(Math.min(locationStats.length, 15)) }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={locationStats.slice(0, 15)} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <BarChart 
+                    data={locationStats.slice(0, 15)} 
+                    layout="vertical"
+                    margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                     <XAxis 
                       type="number" 
-                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)} 
+                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)}
+                      domain={[0, 'dataMax']}
                     />
                     <YAxis type="category" dataKey="location" width={120} tick={{ fontSize: 12 }} />
                     <Tooltip 
@@ -185,7 +258,8 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
                     <Bar 
                       dataKey={metric} 
                       fill="hsl(var(--chart-3))" 
-                      radius={[0, 4, 4, 0]} 
+                      radius={[0, 4, 4, 0]}
+                      label={createCustomLabel(metric, maxLocationValue)}
                     />
                   </BarChart>
                 </ResponsiveContainer>
@@ -197,13 +271,18 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
         <TabsContent value="businessUnit" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="h-[400px]">
+              <div style={{ height: getChartHeight(Math.min(businessUnitStats.length, 15)) }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={businessUnitStats.slice(0, 15)} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <BarChart 
+                    data={businessUnitStats.slice(0, 15)} 
+                    layout="vertical"
+                    margin={{ top: 5, right: 80, left: 10, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                     <XAxis 
                       type="number" 
-                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)} 
+                      tickFormatter={(v) => metric === 'headcount' ? String(v) : formatCurrency(v)}
+                      domain={[0, 'dataMax']}
                     />
                     <YAxis type="category" dataKey="businessUnit" width={120} tick={{ fontSize: 12 }} />
                     <Tooltip 
@@ -217,7 +296,8 @@ export function HeadcountBreakdown({ data }: HeadcountBreakdownProps) {
                     <Bar 
                       dataKey={metric} 
                       fill="hsl(var(--chart-4))" 
-                      radius={[0, 4, 4, 0]} 
+                      radius={[0, 4, 4, 0]}
+                      label={createCustomLabel(metric, maxBusinessUnitValue)}
                     />
                   </BarChart>
                 </ResponsiveContainer>
