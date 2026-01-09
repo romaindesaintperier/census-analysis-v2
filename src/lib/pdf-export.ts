@@ -1,6 +1,10 @@
 import jsPDF from 'jspdf';
 import { AnalysisData } from '@/types/employee';
 import { formatCurrency, formatPercent, defaultBenchmarks } from './analysis';
+import { calculateSpansLayersOutliers } from './spans-layers-outliers';
+
+// Export schema version - increment when export structure changes
+const EXPORT_SCHEMA_VERSION = '1.1';
 
 interface TableColumn {
   header: string;
@@ -89,9 +93,18 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
   }
 
   // Updated addTable - NO row limits, exports ALL data with proper pagination
+  // Auto-scales column widths if total exceeds content width
   function addTable(columns: TableColumn[], rows: Record<string, string | number>[]): void {
     const rowHeight = 7;
     const headerHeight = 8;
+    
+    // Calculate total column width and auto-scale if needed
+    const totalWidth = columns.reduce((sum, col) => sum + col.width, 0);
+    const scaleFactor = totalWidth > contentWidth ? contentWidth / totalWidth : 1;
+    const scaledColumns = columns.map(col => ({
+      ...col,
+      width: col.width * scaleFactor,
+    }));
     
     // Calculate if table fits, otherwise it will span pages
     checkPageBreak(headerHeight + rowHeight * Math.min(rows.length, 3));
@@ -104,7 +117,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     pdf.setTextColor(255, 255, 255);
     
     let xPos = margin + 2;
-    columns.forEach(col => {
+    scaledColumns.forEach(col => {
       const align = col.align || 'left';
       let textX = xPos;
       if (align === 'center') textX = xPos + col.width / 2;
@@ -132,7 +145,7 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
         pdf.setTextColor(255, 255, 255);
         
         xPos = margin + 2;
-        columns.forEach(col => {
+        scaledColumns.forEach(col => {
           const align = col.align || 'left';
           let textX = xPos;
           if (align === 'center') textX = xPos + col.width / 2;
@@ -154,14 +167,14 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
       
       pdf.setFontSize(8);
       xPos = margin + 2;
-      columns.forEach(col => {
+      scaledColumns.forEach(col => {
         const value = String(row[col.key] ?? '');
         const align = col.align || 'left';
         let textX = xPos;
         if (align === 'center') textX = xPos + col.width / 2;
         if (align === 'right') textX = xPos + col.width - 2;
         
-        // Truncate if too long
+        // Truncate if too long (based on scaled width)
         const maxChars = Math.floor(col.width / 2);
         const displayValue = value.length > maxChars ? value.substring(0, maxChars - 2) + '..' : value;
         pdf.text(displayValue, textX, yPos, { align });
@@ -365,18 +378,11 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     }))
   );
 
-  // ALL single-report managers with direct report details
-  const singleReportManagers = spanStats.filter(s => s.directReports === 1);
-  const singleReportManagersWithDetails = singleReportManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitle: directReports[0]?.title || 'Unknown',
-    };
-  });
+  // Use shared helper for outlier calculations (ensures parity with Excel and UI)
+  const outliers = calculateSpansLayersOutliers(spanStats, employees, benchmarks);
 
-  if (singleReportManagersWithDetails.length > 0) {
-    addSectionHeader(`Single-Report Managers (${singleReportManagersWithDetails.length} total)`);
+  if (outliers.singleReportManagers.length > 0) {
+    addSectionHeader(`Single-Report Managers (${outliers.singleReportManagers.length} total)`);
     addTable(
       [
         { header: 'Function', key: 'function', width: 25 },
@@ -385,28 +391,18 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
         { header: 'Layer', key: 'layer', width: 15, align: 'center' },
         { header: 'Direct Report Title', key: 'directReportTitle', width: 35 },
       ],
-      singleReportManagersWithDetails.map(m => ({ 
+      outliers.singleReportManagers.map(m => ({ 
         function: m.function, 
         managerName: m.managerName,
         id: m.managerId, 
         layer: m.layer,
-        directReportTitle: m.directReportTitle,
+        directReportTitle: m.directReportTitle || '',
       }))
     );
   }
 
-  // ALL managers below minimum span with direct report details
-  const belowMinSpanManagers = spanStats.filter(s => s.directReports > 1 && s.directReports < benchmarks.minSpan);
-  const belowMinSpanManagersWithDetails = belowMinSpanManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitles: directReports.map(dr => dr.title).join(', '),
-    };
-  });
-
-  if (belowMinSpanManagersWithDetails.length > 0) {
-    addSectionHeader(`Managers Below Minimum Span (${belowMinSpanManagersWithDetails.length} total)`);
+  if (outliers.belowMinSpanManagers.length > 0) {
+    addSectionHeader(`Managers Below Minimum Span (${outliers.belowMinSpanManagers.length} total)`);
     addTable(
       [
         { header: 'Function', key: 'function', width: 22 },
@@ -416,29 +412,19 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
         { header: 'Reports', key: 'directReports', width: 14, align: 'center' },
         { header: 'Direct Report Titles', key: 'directReportTitles', width: 40 },
       ],
-      belowMinSpanManagersWithDetails.map(m => ({ 
+      outliers.belowMinSpanManagers.map(m => ({ 
         function: m.function, 
         managerName: m.managerName,
         id: m.managerId, 
         layer: m.layer,
         directReports: m.directReports,
-        directReportTitles: m.directReportTitles,
+        directReportTitles: m.directReportTitles || '',
       }))
     );
   }
 
-  // ALL managers above maximum span with direct report details
-  const aboveMaxSpanManagers = spanStats.filter(s => s.directReports > benchmarks.maxSpan);
-  const aboveMaxSpanManagersWithDetails = aboveMaxSpanManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitles: directReports.map(dr => dr.title).join(', '),
-    };
-  });
-
-  if (aboveMaxSpanManagersWithDetails.length > 0) {
-    addSectionHeader(`Managers Above Maximum Span (${aboveMaxSpanManagersWithDetails.length} total)`);
+  if (outliers.aboveMaxSpanManagers.length > 0) {
+    addSectionHeader(`Managers Above Maximum Span (${outliers.aboveMaxSpanManagers.length} total)`);
     addTable(
       [
         { header: 'Function', key: 'function', width: 22 },
@@ -448,13 +434,13 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
         { header: 'Reports', key: 'directReports', width: 14, align: 'center' },
         { header: 'Direct Report Titles', key: 'directReportTitles', width: 40 },
       ],
-      aboveMaxSpanManagersWithDetails.map(m => ({ 
+      outliers.aboveMaxSpanManagers.map(m => ({ 
         function: m.function, 
         managerName: m.managerName,
         id: m.managerId, 
         layer: m.layer,
         directReports: m.directReports,
-        directReportTitles: m.directReportTitles,
+        directReportTitles: m.directReportTitles || '',
       }))
     );
   }
@@ -796,10 +782,19 @@ export async function exportToPDF(data: AnalysisData): Promise<void> {
     }))
   );
 
-  // Footer on last page
-  pdf.setFontSize(8);
-  pdf.setTextColor(...colors.muted);
-  pdf.text(`Generated on ${new Date().toLocaleDateString()} | Total Pages: ${pdf.getNumberOfPages()}`, margin, pageHeight - 10);
+  // Footer on all pages with schema version
+  const totalPages = pdf.getNumberOfPages();
+  const generatedAt = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  for (let i = 1; i <= totalPages; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(8);
+    pdf.setTextColor(...colors.muted);
+    pdf.text(
+      `Export v${EXPORT_SCHEMA_VERSION} | Generated ${generatedAt} | Page ${i} of ${totalPages}`,
+      margin,
+      pageHeight - 10
+    );
+  }
 
   // Save
   pdf.save(`org-analysis-${new Date().toISOString().split('T')[0]}.pdf`);

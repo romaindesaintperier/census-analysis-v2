@@ -1,6 +1,10 @@
 import ExcelJS from 'exceljs';
 import { AnalysisData } from '@/types/employee';
 import { formatCurrency, formatPercent, defaultBenchmarks } from './analysis';
+import { calculateSpansLayersOutliers } from './spans-layers-outliers';
+
+// Export schema version - increment when export structure changes
+const EXPORT_SCHEMA_VERSION = '1.1';
 
 export async function exportToExcel(data: AnalysisData): Promise<void> {
   const workbook = new ExcelJS.Workbook();
@@ -36,6 +40,9 @@ export async function exportToExcel(data: AnalysisData): Promise<void> {
 
   // 10. All Managers Sheet (complete span data)
   addAllManagersSheet(workbook, data);
+
+  // 11. Meta Sheet (export version and diagnostics)
+  addMetaSheet(workbook, data);
 
   // Generate and download
   const buffer = await workbook.xlsx.writeBuffer();
@@ -364,17 +371,10 @@ function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Single-Report Managers List with details
-  const singleReportManagers = spanStats.filter(s => s.directReports === 1);
-  const singleReportManagersWithDetails = singleReportManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitle: directReports[0]?.title || 'Unknown',
-    };
-  });
+  // Use shared helper for outlier calculations (ensures parity with PDF and UI)
+  const outliers = calculateSpansLayersOutliers(spanStats, employees, benchmarks);
 
-  if (singleReportManagersWithDetails.length > 0) {
+  if (outliers.singleReportManagers.length > 0) {
     sheet.addRow(['SINGLE-REPORT MANAGERS']);
     sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
     sheet.addRow([]);
@@ -382,25 +382,15 @@ function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     const singleHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Report Title']);
     styleHeader(singleHeaderRow);
 
-    singleReportManagersWithDetails.forEach(mgr => {
-      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReportTitle]);
+    outliers.singleReportManagers.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReportTitle || '']);
     });
   }
 
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Managers Below Minimum Span List with details
-  const belowMinSpanManagers = spanStats.filter(s => s.directReports > 1 && s.directReports < benchmarks.minSpan);
-  const belowMinSpanManagersWithDetails = belowMinSpanManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitles: directReports.map(dr => dr.title).join(', '),
-    };
-  });
-
-  if (belowMinSpanManagersWithDetails.length > 0) {
+  if (outliers.belowMinSpanManagers.length > 0) {
     sheet.addRow([`MANAGERS BELOW MINIMUM SPAN (< ${benchmarks.minSpan} reports)`]);
     sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
     sheet.addRow([]);
@@ -408,25 +398,15 @@ function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     const belowMinHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Reports', 'Direct Report Titles']);
     styleHeader(belowMinHeaderRow);
 
-    belowMinSpanManagersWithDetails.forEach(mgr => {
-      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles]);
+    outliers.belowMinSpanManagers.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles || '']);
     });
   }
 
   sheet.addRow([]);
   sheet.addRow([]);
 
-  // Managers Above Maximum Span List with details
-  const aboveMaxSpanManagers = spanStats.filter(s => s.directReports > benchmarks.maxSpan);
-  const aboveMaxSpanManagersWithDetails = aboveMaxSpanManagers.map(mgr => {
-    const directReports = employees.filter(emp => emp.managerId === mgr.managerId);
-    return {
-      ...mgr,
-      directReportTitles: directReports.map(dr => dr.title).join(', '),
-    };
-  });
-
-  if (aboveMaxSpanManagersWithDetails.length > 0) {
+  if (outliers.aboveMaxSpanManagers.length > 0) {
     sheet.addRow([`MANAGERS ABOVE MAXIMUM SPAN (> ${benchmarks.maxSpan} reports)`]);
     sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
     sheet.addRow([]);
@@ -434,8 +414,8 @@ function addSpansLayersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     const aboveMaxHeaderRow = sheet.addRow(['Function', 'Manager Title', 'Employee ID', 'Layer', 'Direct Reports', 'Direct Report Titles']);
     styleHeader(aboveMaxHeaderRow);
 
-    aboveMaxSpanManagersWithDetails.forEach(mgr => {
-      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles]);
+    outliers.aboveMaxSpanManagers.forEach(mgr => {
+      sheet.addRow([mgr.function, mgr.managerName, mgr.managerId, mgr.layer, mgr.directReports, mgr.directReportTitles || '']);
     });
   }
 
@@ -978,5 +958,65 @@ function addAllManagersSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
     { width: 10 },
     { width: 15 },
     { width: 15 }
+  ];
+}
+
+function addMetaSheet(workbook: ExcelJS.Workbook, data: AnalysisData) {
+  const sheet = workbook.addWorksheet('Meta');
+  const { employees, spanStats, totals } = data;
+  const benchmarks = defaultBenchmarks;
+
+  // Calculate outlier counts for diagnostics
+  const singleReportCount = spanStats.filter(s => s.directReports === 1).length;
+  const belowMinCount = spanStats.filter(s => s.directReports > 1 && s.directReports < benchmarks.minSpan).length;
+  const aboveMaxCount = spanStats.filter(s => s.directReports > benchmarks.maxSpan).length;
+
+  // Export metadata
+  sheet.addRow(['EXPORT METADATA']);
+  sheet.getRow(1).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  sheet.addRow(['Property', 'Value']);
+  styleHeader(sheet.getRow(3));
+
+  sheet.addRow(['Export Schema Version', EXPORT_SCHEMA_VERSION]);
+  sheet.addRow(['Generated At', new Date().toISOString()]);
+  sheet.addRow(['Total Employees', employees.length]);
+  sheet.addRow(['Total Managers', totals.totalManagers]);
+  sheet.addRow(['Org Layers', totals.layers]);
+
+  sheet.addRow([]);
+  sheet.addRow([]);
+
+  // Outlier diagnostics
+  sheet.addRow(['OUTLIER COUNTS (for export parity verification)']);
+  sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  sheet.addRow(['Outlier Type', 'Count']);
+  styleHeader(sheet.getRow(sheet.rowCount));
+
+  sheet.addRow(['Single-Report Managers', singleReportCount]);
+  sheet.addRow(['Managers Below Minimum Span', belowMinCount]);
+  sheet.addRow(['Managers Above Maximum Span', aboveMaxCount]);
+
+  sheet.addRow([]);
+  sheet.addRow([]);
+
+  // Benchmarks used
+  sheet.addRow(['BENCHMARKS USED']);
+  sheet.getRow(sheet.rowCount).font = { bold: true, size: 14 };
+  sheet.addRow([]);
+
+  sheet.addRow(['Benchmark', 'Value']);
+  styleHeader(sheet.getRow(sheet.rowCount));
+
+  sheet.addRow(['Minimum Span of Control', benchmarks.minSpan]);
+  sheet.addRow(['Maximum Span of Control', benchmarks.maxSpan]);
+  sheet.addRow(['Maximum Layers', benchmarks.maxLayers]);
+
+  sheet.columns = [
+    { width: 40 },
+    { width: 30 }
   ];
 }
